@@ -4,7 +4,7 @@
 * to create a map of visible area
 */
 
-#include <cmath>
+#include <cmath> /* abs */
 #include <fstream> /* fopen, fclose, fread, fwrite */
 #include <cstdlib> /* malloc */
 #include <cstring> /* memcpy */
@@ -14,10 +14,13 @@
 #include <algorithm> /* count */
 #include <omp.h> /* OpenMP Functionality */
 
+struct Pixel;
+
 int width; /* width of dataset */
 int height; /* height of dataset */
 size_t size; /* full size of dataset */
 int thread_count = omp_get_max_threads(); /* number of threads for program */
+Pixel *pixels; /* collection of pixels to be analyzed */
 
 // container for pixel and correlating elevation at that point in data
 struct Pixel 
@@ -37,13 +40,15 @@ struct Pixel
   int x;
   int y;
   short z;
-  bool visited = false;
+  std::vector<Pixel> visible;
   };
 
 // returns true if path is free, false if collision detected
 // collision in line of sight found
 //
 // collision happens when data[x * width + y] > pixel.z
+//
+// this part of the algorithm works as intended
 bool checkCollision(std::vector<Pixel> path, short data[])
 {
   for (Pixel &p : path)
@@ -59,6 +64,8 @@ bool checkCollision(std::vector<Pixel> path, short data[])
 
 // Bresenham line algorithm for 3 dimensions (3rd dimension is data elevation)
 // drawn from https://www.geeksforgeeks.org/bresenhams-algorithm-for-3-d-line-drawing/
+// 
+// This part of the algorithm works as intended
 std::vector<Pixel> Bresenham(int x1, int y1, int z1, int x2, int y2, int z2)
 {
   std::vector<Pixel> pixels;
@@ -163,16 +170,52 @@ std::vector<Pixel> Bresenham(int x1, int y1, int z1, int x2, int y2, int z2)
   return pixels;
 }
 
-uint32_t computeVisibilityAtPoint(size_t row, size_t col, short data[])
+// this is the part that needs to be fixed
+uint32_t computeVisibilityAtPoint(/*size_t row, size_t col,*/ size_t index, short data[])
 {
   // this algorithm likely will be a breadth-first search (exhaustive) implementation for each
   // point in the grid
 
+  /*
   int x = row;
   int y = col;
   short z = data[x * width + y];
+  */
 
+  /*
+   * for i from index to width * height:
+   *    check visibility from pixels[index] to i
+   *    if no collision:
+   *        add i to index's visible list
+   *        add index to i's visible list
+   */
 
+#pragma omp parallel for num_threads(thread_count)
+  for (size_t i=index+1; i<width*height; i++)
+  {
+    if (i % 100000 == 0)
+    {
+      std::cout << "Computing pixel " << i << "..." << std::endl;
+    }
+    auto path = Bresenham(pixels[index].x, pixels[index].y, pixels[index].z, pixels[i].x, pixels[i].y, pixels[i].z);
+    if (checkCollision(path, data))
+    {
+#pragma omp critical
+      pixels[index].visible.push_back(pixels[i]);
+#pragma omp critical
+      pixels[i].visible.push_back(pixels[index]);
+    }
+
+    if (i % 100000 == 0)
+    {
+      std::cout << "Pixel " << i << " completed!" << std::endl;
+    }
+  }
+
+  return pixels[index].visible.size();
+  
+
+  /*
   std::deque<Pixel> q;
   std::vector<Pixel> visible;
   Pixel curr(x, y, z);
@@ -225,6 +268,7 @@ uint32_t computeVisibilityAtPoint(size_t row, size_t col, short data[])
   }
 
   return visible.size();
+  */
 }
 
 void computeVisibility(short in[], short out[] /*size_t row, size_t col*/)
@@ -242,29 +286,21 @@ void computeVisibility(short in[], short out[] /*size_t row, size_t col*/)
     */
 
   // shared variables - to be utilized by each thread
-  int i, j; // indices for x and y coordinates to be passed to point visibility calculation
+  int i; // indices for data to be passed to point visibility calculation
   short *temp = (short *)malloc(size); // temporary memory for calculation
 
-  #pragma omp parallel for num_threads(thread_count)
-  for (i=0; i<width; i++)
+  for (i=0; i<width * height; i++)
     {
-      for (j=0; j<height; j++)
-        {
-          temp[i*height + j] = computeVisibilityAtPoint(i, j, in);
-          std::cout << "Computed pixel at: " << i << ", " << j << std::endl;
-          fflush(stdout);
-        }
-      fflush(stdout);
+      std::cout << ">>> computing pixel number: " << i << "..." << std::endl;
+      temp[i] = computeVisibilityAtPoint(i, in);
+      std::cout << ">>> Pixel number: " << i << " complete!" << std::endl;
     }
 
   // copy memory to out (parallelized)
   #pragma omp parallel for num_threads(thread_count)
-  for (i=0; i<width; i++)
+  for (i=0; i<width * height; i++)
     {
-      for (j=0; j<height; j++)
-        {
-          memcpy(&out[i*height + j], &temp[i*height + j], sizeof(short));
-        }
+      memcpy(&out[i], &temp[i], sizeof(short));
     }
 }
 
@@ -293,6 +329,18 @@ int main(int argc, char **argv)
 
   fclose(data);
 
+  // generate global pixel array
+  pixels = (Pixel *)malloc(width * height * sizeof(Pixel));
+
+  for (size_t i=0; i<width; i++)
+  {
+    for (size_t j=0; j<height; j++)
+    {
+      pixels[i * width + j] = Pixel(i, j, dataMem[i * width + j]);
+    }
+  }
+
+  // compute visibility of each pixel of dataset
   computeVisibility(dataMem, outMem);
 
   // write out file
