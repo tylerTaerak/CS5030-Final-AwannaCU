@@ -14,281 +14,159 @@
 #include <algorithm> /* count */
 #include <omp.h> /* OpenMP Functionality */
 
-struct Pixel;
+#define MASK_SIZE 40401
+#define SUB_WIDTH 201
 
-int width; /* width of dataset */ 
-int height; /* height of dataset */ 
-size_t size; /* full size of dataset */
 int thread_count = omp_get_max_threads(); /* number of threads for program */
 
-// container for pixel and correlating elevation at that point in data
-struct Pixel 
+void getVisibility(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, short *data, char *visible, int16_t leftX, int16_t topY, uint16_t width)
 {
-  Pixel() = default;
+  short elevation = data[y0 * width + x0];
 
-  Pixel(int x, int y, short z)
-{
-    this->x = x;
-    this->y = y;
-    this->z = z;
-    }
+  int dx = std::abs(x1 - x0);
+  int dy = std::abs(y1 - y0);
 
-    bool operator== (const Pixel &other)
-{
-      return x == other.x && y == other.y;
-    }
+  int xs, ys;
 
-  int x;
-  int y;
-  short z;
-  std::vector<Pixel> visible;
-  };
-
-// returns true if path is free, false if collision detected
-// collision in line of sight found
-//
-// collision happens when data[x * width + y] > pixel.z
-//
-// this part of the algorithm works as intended
-bool checkCollision(std::vector<Pixel> path, short data[])
-{
-  for (Pixel &p : path)
-  {
-    if (data[p.x * width + p.y] > p.z)
-    {
-      return false;
-    }
-  }
-  return true;
-}
-
-
-// Bresenham line algorithm for 3 dimensions (3rd dimension is data elevation)
-// drawn from https://www.geeksforgeeks.org/bresenhams-algorithm-for-3-d-line-drawing/
-// 
-// This part of the algorithm works as intended
-std::vector<Pixel> Bresenham(int x1, int y1, int z1, int x2, int y2, int z2)
-{
-  std::vector<Pixel> pixels;
-
-  pixels.emplace_back(x1, y1, z1);
-
-  int dx = std::abs(x2 - x1);
-  int dy = std::abs(y2 - y1);
-  int dz = std::abs(z2 - z1);
-
-  int xs, ys, zs;
-
-  if (x2 > x1)
+  if (x1 > x0)
   {
     xs = 1;
   }
   else {
     xs = -1;
   }
-  if (y2 > y1)
+  if (y1 > y0)
   {
     ys = 1;
   }
   else {
     ys = -1;
   }
-  if (z2 > z1)
-  {
-    zs = 1;
-  }
-  else {
-    zs = -1;
-  }
 
-  if (dx >= dy && dx >= dz)
-  {
-    int p1 = 2 * dy - dx;
-    int p2 = 2 * dz - dx;
-    while (x1 != x2)
-    {
-      x1 += xs;
-      if (p1 >= 0)
-        {
-          y1 += ys;
-          p1 -= 2 * dx;
-        }
-      if (p2 >= 0)
-        {
-          z1 += zs;
-          p2 -= 2 * dx;
-        }
-      p1 += 2 * dy;
-      p2 += 2 * dz;
-      pixels.emplace_back(x1, y1, z1);
-    }
-  }
+  double maxSlope = -45;
 
-  else if (dy >= dx && dy >= dz){
-    int p1 = 2 * dx - dy;
-    int p2 = 2 * dz - dy;
-    while (y1 != y2)
+  if (dx >= dy)
+  {
+    int error = 2 * dy - dx;
+    while (x0 != x1)
     {
-      y1 += ys;
-      if (p1 >= 0)
+      short obs = data[y0 * width + x0] - elevation;
+      double distance = std::sqrt((double)((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0)));
+      double slope = obs / distance;
+
+      if (slope > maxSlope)
+      {
+        visible[(y0 - topY) * SUB_WIDTH + (x0 - leftX)] = 1;
+        maxSlope = slope;
+      }
+
+      x0 += xs;
+      if (error >= 0)
         {
-          x1 += xs;
-          p1 -= 2 * dy;
+          y0 += ys;
+          error -= 2 * dx;
         }
-      if (p2 >= 0)
-        {
-          z1 += zs;
-          p2 -= 2 * dy;
-        }
-      p1 += 2 * dx;
-      p2 += 2 * dz;
-      pixels.emplace_back(x1, y1, z1);
+      error += 2 * dy;
     }
   }
 
   else {
-    int p1 = 2 * dx - dz;
-    int p2 = 2 * dy - dz;
-    while (z1 != z2)
+    int error = 2 * dx - dy;
+    while (y0 != y1)
     {
-      z1 += zs;
-      if (p1 >= 0)
+      short obs = data[y0 * width + x0] - elevation;
+      double distance = std::sqrt((double)((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0)));
+      double slope = obs / distance;
+
+      if (slope > maxSlope)
+      {
+        visible[(y0 - topY) * SUB_WIDTH + (x0 - leftX)] = 1;
+        maxSlope = slope;
+      }
+
+      y0 += ys;
+      if (error >= 0)
         {
-          x1 += xs;
-          p1 -= 2 * dz;
+          x0 += xs;
+          error -= 2 * dy;
         }
-      if (p2 >= 0)
-        {
-          y1 += ys;
-          p2 -= 2 * dz;
-        }
-      p1 += 2 * dx;
-      p2 += 2 * dy;
-      pixels.emplace_back(x1, y1, z1);
+      error += 2 * dx;
     }
   }
-
-  return pixels;
 }
 
-// this is the part that needs to be fixed
-uint32_t computeVisibilityAtPoint(int x, int y, short data[])
+uint32_t getVisibilityAtPoint(uint16_t x0, uint16_t y0, uint8_t radius, short *data, char *visible, uint16_t width, uint16_t height)
 {
+  uint32_t totalVisiblePoints = 0;
+    
+  int16_t leftX   = (x0 - radius) < 0 ? 0 : (x0 - radius) ;
+  int16_t topY    = (y0 - radius) < 0 ? 0 : (y0 - radius) ;
+  int16_t rightX  = (x0 + radius) >= width  ? width - 1  : (x0 + radius) ;
+  int16_t bottomY = (y0 + radius) >= height ? height - 1 : (y0 + radius) ;
+  
+  uint16_t x = leftX;
+  uint16_t y = topY;
 
-  std::deque<Pixel> q;
-  std::vector<Pixel> visited;
-  q.emplace_back(x, y, data[x * width + y]);
-
-  Pixel curr;
-  for (int i=0; i<100; i++)
+  for (; x<rightX; x++)
   {
-      curr = q.front();
-      q.pop_front();
-      // bfs search until we reach the 100 pixel radius 
+    getVisibility(x0, y0, x, y, data, visible, leftX, topY, width);
+  }
+  getVisibility(x0, y0, x, y, data, visible, leftX, topY, width);
 
-      // add adjacent pixels to q if within 0 - width or height
-      std::vector<Pixel> next;
+  for (y++; y < bottomY; y++)
+  {
+    getVisibility(x0, y0, x, y, data, visible, leftX, topY, width);
+  }
+  getVisibility(x0, y0, x, y, data, visible, leftX, topY, width);
 
-      if (!(curr.x+1 > width))
-      {
-        next.emplace_back(curr.x + 1, curr.y, data[(curr.x+1) * width + curr.y]);
-      }
-      if (!(curr.x-1 < 0))
-      {
-        next.emplace_back(curr.x-1, curr.y, data[(curr.x-1) * width + curr.y]);
-        if (!(curr.y+1 > height))
-        {
-          next.emplace_back(curr.x-1, curr.y+1, data[(curr.x-1) * width + curr.y+1]);
-        }
+  for (x--; x > leftX; x--)
+  {
+    getVisibility(x0, y0, x, y, data, visible, leftX, topY, width);
+  }
+  getVisibility(x0, y0, x, y, data, visible, leftX, topY, width);
 
-        if (!(curr.y-1 < 0))
-        {
-          next.emplace_back(curr.x-1, curr.y-1, data[(curr.x-1) * width + curr.y-1]);
-        }
-      }
-      if (!(curr.y+1 > height))
-      {
-        next.emplace_back(curr.x, curr.y+1, data[curr.x * width + curr.y+1]);
-      }
-      if (!(curr.y-1 < 0))
-      {
-        next.emplace_back(curr.x, curr.y-1, data[curr.x * width + curr.y-1]);
-      }
-
-      for (Pixel &p : next)
-      {
-        visited.push_back(p);
-        q.push_back(p);
-      }
+  for (y--; y > topY; y--)
+  {
+    getVisibility(x0, y0, x, y, data, visible, leftX, topY, width);
   }
 
-  while (!q.empty())
+  for (int i=0; i<(SUB_WIDTH * SUB_WIDTH); i++)
   {
-    visited.push_back(q.front());
-    q.pop_front();
+    totalVisiblePoints += visible[i];
   }
 
-  int visible_pixels = 0;
-  for (Pixel &p : visited)
-  {
-    if (checkCollision(Bresenham(x, y, data[x * width + y], p.x, p.y, p.z), data))
-    {
-      visible_pixels++;
-    }
-  }
-
-  return visible_pixels;
+  return totalVisiblePoints;
 }
 
-void computeVisibility(short in[], short out[] /*size_t row, size_t col*/)
+void calcViewshed(short *data, uint32_t *out, uint8_t radius, uint16_t width, uint16_t height)
 {
+  char visiblePoints[MASK_SIZE];
+  memset(visiblePoints, 0, MASK_SIZE);
+  int i, j;
 
-  /**
-    * this is where the multi-cpu implementation will go
-    *
-    * Here's how it will work:
-    *
-    * 1. Send a point to each thread
-    * 2. Each thread calculates visibility from point using Bresenham's
-    *   line algorithm
-    * 3. give results back to main thread in outMem
-    */
-
-  // shared variables - to be utilized by each thread
-  int i; // indices for data to be passed to point visibility calculation
-  int j;
-  short *temp = (short *)malloc(size); // temporary memory for calculation
-
-  // calculate visiblitiy for each pixel
 #pragma omp parallel for num_threads(thread_count) collapse(2)
   for (i=0; i<width; i++)
+  {
+    for (j=0; j<height; j++)
     {
-      for (j=0; j<height; j++)
+      out[j * width + i] = getVisibilityAtPoint(i, j, radius, data, visiblePoints, width, height);
+      if ((j * width + i) % 100000 == 0)
       {
-        temp[i * width + j] = computeVisibilityAtPoint(i, j, in);
-        if ((i * width + j) % 100000 == 0)
-        {
-          std::cout << "Pixel " << i << ", " << j << " complete!" << std::endl;
-        }
+        std::cout << "Pixel " << j << ", " << i << " complete!" << std::endl;
       }
     }
+  }
 
   std::cout << "Pixel analysis complete" << std::endl;
-
-  // copy memory to out (parallelized)
-  #pragma omp parallel for num_threads(thread_count)
-  for (i=0; i<width * height; i++)
-    {
-      memcpy(&out[i], &temp[i], sizeof(short));
-    }
 }
+
 
 int main(int argc, char **argv)
 {
   // initialize dimensional variables
-  width = 6000;
-  height = 6000;
-  size = width * height * sizeof(short);
+  uint16_t width = 6000;
+  uint16_t height = 6000;
+  uint32_t size = width * height;
 
   // if program is run without arguments, program will use every available thread
   // otherwise, the first argument defines the number of threads
@@ -298,8 +176,8 @@ int main(int argc, char **argv)
   }
 
   // initialize memory variables
-  short *dataMem = (short *)malloc(size);
-  short *outMem = (short *)malloc(size);
+  short *dataMem = (short *)malloc(size * sizeof(short));
+  uint32_t *outMem = (uint32_t *)malloc(size * sizeof(uint32_t));
 
   // read in file
   FILE *data = fopen("./data/srtm_14_04_6000x6000_short16.raw", "rb");
@@ -309,12 +187,12 @@ int main(int argc, char **argv)
   fclose(data);
 
   // compute visibility of each pixel of dataset
-  computeVisibility(dataMem, outMem);
+  calcViewshed(dataMem, outMem, 100, width, height);
 
   // write out file
   FILE *outData = fopen("./data/out_awannacu.raw", "wb");
 
-  fwrite((char *)outMem, sizeof(short), width * height, data);
+  fwrite((char *)outMem, sizeof(uint32_t), width * height, data);
 
   fclose(data);
   
