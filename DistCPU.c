@@ -73,7 +73,7 @@ int main(int argc, char *argv[])
   
   if (proc_rank == 0)
   {
-    f = fopen("out_distcpu.raw");
+    f = fopen("srtm_14_04_6000x6000_int32_distCPU_10.raw", "wb");
     fwrite(output, sizeof(uint32_t), width * height, f);
     fclose(f);
   }

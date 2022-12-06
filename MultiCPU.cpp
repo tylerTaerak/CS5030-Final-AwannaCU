@@ -1,3 +1,4 @@
+#include <cstdint>
 #include <stdio.h>
 #include <iostream>
 #include <stdlib.h>
@@ -56,6 +57,10 @@ int main(int argc, char* argv[]) {
   std::chrono::duration<double> difference = end_time - start_time;
 
   printf("Operation Completed.\n Time taken: %f s \n", difference.count());
+
+  FILE * f = fopen("srtm_14_04_6000x6000_int32_cpu_10.raw", "wb");
+  fwrite(out, sizeof(uint32_t), NUM_COLUMNS * NUM_ROWS , f);
+  fclose(f);
 
   return 0;
 }

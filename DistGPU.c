@@ -6,6 +6,7 @@
 /* size of computed section per process */
 #define SLICE 1000
 
+void startKernel(short *data, uint32_t *viewshed, uint8_t radius, uint16_t width, uint16_t height);
 
 int main(int argc, char *argv[])
 {
@@ -101,7 +102,7 @@ int main(int argc, char *argv[])
   
   if (proc_rank == 0)
   {
-    f = fopen("out_distgpu.raw", "wb");
+    f = fopen("srtm_14_04_6000x6000_int32_distGPU_10.raw", "wb");
     fwrite(output, sizeof(uint32_t), width * height, f);
     fclose(f);
   }
