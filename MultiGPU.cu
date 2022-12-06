@@ -3,8 +3,8 @@
 #include <stdint.h>
 #include <math.h>
 
-#define MASK_SIZE 40401
-#define SUB_WIDTH 201
+#define MASK_SIZE 441
+#define SUB_WIDTH 21
 
 __device__
 void getNormalVisibility(
@@ -251,7 +251,7 @@ int main() {
     
     // float elapsedTime = 0;                // Actual elapsed time of the kernal functions.
     
-    uint8_t radius = 100;
+    uint8_t radius = 10;
     
     uint32_t size;
     
