@@ -19,7 +19,7 @@ void visiblePoints(int numRows, int numColumns, uint8_t radius, unsigned short* 
 void getNormalVisibility(int8_t sign, uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t *observationElevation, unsigned short *data, char *visiblePoints, int16_t *leftX, int16_t *topY, uint16_t *visiblePointsWidth, int width);
 void getInverseVisibility(int8_t sign, uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t *observationElevation, unsigned short *data, char *visiblePoints, int16_t *leftX, int16_t *topY, uint16_t *visiblePointsWidth, int width);
 void getVisibility(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, unsigned short *data, char *visiblePoints, int16_t *leftX, int16_t *topY, uint16_t *visiblePointsWidth, int width);
-uint32_t getVisibilityInAreaOfInterest(uint16_t x0, uint16_t y0, uint8_t radius, unsigned short *data, int width, int height);
+extern "C" uint32_t getVisibilityInAreaOfInterest(uint16_t x0, uint16_t y0, uint8_t radius, unsigned short *data, int width, int height);
 
 int main(int argc, char* argv[]) {
   std::string fileName;
@@ -90,7 +90,6 @@ std::vector<unsigned short int> readInFile(std::string fileName) {
 
 // Determines the number of visible pixels within a certain radius from a given center. 
 void visiblePoints(int numRows, int numColumns, uint8_t radius, unsigned short* data, uint32_t *out) {
-  FILE* outFile = fopen("srtm_14_04_6000x6000_int32_serial_10.raw", "wb");
     #pragma omp parallel for num_threads(thread_count) collapse(2)
   for (int y = 0; y < numRows; y++) {
       for (int x = 0; x < numColumns; x++) {
@@ -98,8 +97,6 @@ void visiblePoints(int numRows, int numColumns, uint8_t radius, unsigned short* 
           out[y * numRows + x] = visiblePoints;
       }
   }
-
-  fclose(outFile);
 }
 
 void getNormalVisibility(
@@ -252,7 +249,7 @@ void getVisibility(
     }
 }
 
-uint32_t getVisibilityInAreaOfInterest(
+extern "C" uint32_t getVisibilityInAreaOfInterest(
     uint16_t x0,
     uint16_t y0,
     uint8_t radius,
