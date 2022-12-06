@@ -7,6 +7,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <math.h>
+#include <chrono>
 
 
 std::vector<unsigned short int> readInFile(std::string fileName);
@@ -27,7 +28,7 @@ int main(int argc, char* argv[]) {
 
   // Store the file name from the command line.
   if (argc == 2) {
-    fileName = argv[1];
+    fileName = argv[1]; 
   } else {
     printf("Invalid Arguments: Must supply name of input file");
     return -1;
@@ -36,7 +37,14 @@ int main(int argc, char* argv[]) {
   // Store the topological data from the input file.
   srtm_grid = readInFile(fileName);
 
+  // Calculate the viewshed and write to file. 
+  std::chrono::time_point<std::chrono::system_clock> start_time = std::chrono::system_clock::now();
   writeVisiblePoints(NUM_ROWS, NUM_COLUMNS, radius, srtm_grid.data());
+  std::chrono::time_point<std::chrono::system_clock> end_time = std::chrono::system_clock::now();
+
+  std::chrono::duration<double> difference = end_time - start_time;
+
+  printf("Operation Completed.\n Time taken: %f s \n", difference.count());
 
   return 0;
 }
