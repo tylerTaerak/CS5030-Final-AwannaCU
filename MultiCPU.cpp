@@ -1,200 +1,305 @@
-/**
-* This is the file for the Parallel CPU implementation
-* of the AwannaCU Project for CS5030. It uses SRTM data
-* to create a map of visible area
-*/
-
-#include <cmath> /* abs */
-#include <fstream> /* fopen, fclose, fread, fwrite */
-#include <cstdlib> /* malloc */
-#include <cstring> /* memcpy */
-#include <deque> /* deque */
-#include <vector> /* vector */
+#include <stdio.h>
 #include <iostream>
-#include <algorithm> /* count */
-#include <omp.h> /* OpenMP Functionality */
+#include <stdlib.h>
+#include <fstream>
+#include <sstream>
+#include <vector>
+#include <string.h>
+#include <stdint.h>
+#include <math.h>
+#include <chrono>
+#include <omp.h>
 
-#define MASK_SIZE 40401
-#define SUB_WIDTH 201
+int thread_count = omp_get_max_threads();
 
-int thread_count = omp_get_max_threads(); /* number of threads for program */
 
-void getVisibility(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, short *data, char *visible, int16_t leftX, int16_t topY, uint16_t width)
-{
-  short elevation = data[y0 * width + x0];
+std::vector<unsigned short int> readInFile(std::string fileName);
+void visiblePoints(int numRows, int numColumns, uint8_t radius, unsigned short* data, uint32_t *out);
 
-  int dx = std::abs(x1 - x0);
-  int dy = std::abs(y1 - y0);
+void getNormalVisibility(int8_t sign, uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t *observationElevation, unsigned short *data, char *visiblePoints, int16_t *leftX, int16_t *topY, uint16_t *visiblePointsWidth, int width);
+void getInverseVisibility(int8_t sign, uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t *observationElevation, unsigned short *data, char *visiblePoints, int16_t *leftX, int16_t *topY, uint16_t *visiblePointsWidth, int width);
+void getVisibility(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, unsigned short *data, char *visiblePoints, int16_t *leftX, int16_t *topY, uint16_t *visiblePointsWidth, int width);
+uint32_t getVisibilityInAreaOfInterest(uint16_t x0, uint16_t y0, uint8_t radius, unsigned short *data, int width, int height);
 
-  int xs, ys;
+int main(int argc, char* argv[]) {
+  std::string fileName;
+  std::vector<unsigned short int> srtm_grid;
+  const int NUM_COLUMNS = 6000;
+  const int NUM_ROWS = 6000;
+  uint8_t radius = 10;
 
-  if (x1 > x0)
+
+  // Store the file name from the command line.
+  if (argc >= 2) {
+    fileName = argv[1]; 
+  } else {
+    printf("Invalid Arguments: Must supply name of input file");
+    return -1;
+  }
+
+  if (argc == 3)
   {
-    xs = 1;
-  }
-  else {
-    xs = -1;
-  }
-  if (y1 > y0)
-  {
-    ys = 1;
-  }
-  else {
-    ys = -1;
+    thread_count = std::atoi(argv[2]);
   }
 
-  double maxSlope = -45;
+  // Store the topological data from the input file.
+  srtm_grid = readInFile(fileName);
 
-  if (dx >= dy)
-  {
-    int error = 2 * dy - dx;
-    while (x0 != x1)
-    {
-      short obs = data[y0 * width + x0] - elevation;
-      double distance = std::sqrt((double)((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0)));
-      double slope = obs / distance;
+  uint32_t *out = (uint32_t *)malloc(NUM_COLUMNS * NUM_ROWS * sizeof(uint32_t));
+  memset(out, 0, NUM_COLUMNS * NUM_ROWS * sizeof(uint32_t));
 
-      if (slope > maxSlope)
-      {
-        visible[(y0 - topY) * SUB_WIDTH + (x0 - leftX)] = 1;
-        maxSlope = slope;
-      }
+  // Calculate the viewshed and write to file. 
+  std::chrono::time_point<std::chrono::system_clock> start_time = std::chrono::system_clock::now();
+  visiblePoints(NUM_ROWS, NUM_COLUMNS, radius, srtm_grid.data(), out);
+  std::chrono::time_point<std::chrono::system_clock> end_time = std::chrono::system_clock::now();
 
-      x0 += xs;
-      if (error >= 0)
-        {
-          y0 += ys;
-          error -= 2 * dx;
-        }
-      error += 2 * dy;
-    }
-  }
+  std::chrono::duration<double> difference = end_time - start_time;
 
-  else {
-    int error = 2 * dx - dy;
-    while (y0 != y1)
-    {
-      short obs = data[y0 * width + x0] - elevation;
-      double distance = std::sqrt((double)((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0)));
-      double slope = obs / distance;
+  printf("Operation Completed.\n Time taken: %f s \n", difference.count());
 
-      if (slope > maxSlope)
-      {
-        visible[(y0 - topY) * SUB_WIDTH + (x0 - leftX)] = 1;
-        maxSlope = slope;
-      }
-
-      y0 += ys;
-      if (error >= 0)
-        {
-          x0 += xs;
-          error -= 2 * dy;
-        }
-      error += 2 * dx;
-    }
-  }
-}
-
-uint32_t getVisibilityAtPoint(uint16_t x0, uint16_t y0, uint8_t radius, short *data, char *visible, uint16_t width, uint16_t height)
-{
-  uint32_t totalVisiblePoints = 0;
-    
-  int16_t leftX   = (x0 - radius) < 0 ? 0 : (x0 - radius) ;
-  int16_t topY    = (y0 - radius) < 0 ? 0 : (y0 - radius) ;
-  int16_t rightX  = (x0 + radius) >= width  ? width - 1  : (x0 + radius) ;
-  int16_t bottomY = (y0 + radius) >= height ? height - 1 : (y0 + radius) ;
-  
-  uint16_t x = leftX;
-  uint16_t y = topY;
-
-  for (; x<rightX; x++)
-  {
-    getVisibility(x0, y0, x, y, data, visible, leftX, topY, width);
-  }
-  getVisibility(x0, y0, x, y, data, visible, leftX, topY, width);
-
-  for (y++; y < bottomY; y++)
-  {
-    getVisibility(x0, y0, x, y, data, visible, leftX, topY, width);
-  }
-  getVisibility(x0, y0, x, y, data, visible, leftX, topY, width);
-
-  for (x--; x > leftX; x--)
-  {
-    getVisibility(x0, y0, x, y, data, visible, leftX, topY, width);
-  }
-  getVisibility(x0, y0, x, y, data, visible, leftX, topY, width);
-
-  for (y--; y > topY; y--)
-  {
-    getVisibility(x0, y0, x, y, data, visible, leftX, topY, width);
-  }
-
-  for (int i=0; i<(SUB_WIDTH * SUB_WIDTH); i++)
-  {
-    totalVisiblePoints += visible[i];
-  }
-
-  return totalVisiblePoints;
-}
-
-void calcViewshed(short *data, uint32_t *out, uint8_t radius, uint16_t width, uint16_t height)
-{
-  char visiblePoints[MASK_SIZE];
-  memset(visiblePoints, 0, MASK_SIZE);
-  int i, j;
-
-#pragma omp parallel for num_threads(thread_count) collapse(2)
-  for (i=0; i<width; i++)
-  {
-    for (j=0; j<height; j++)
-    {
-      out[j * width + i] = getVisibilityAtPoint(i, j, radius, data, visiblePoints, width, height);
-      if ((j * width + i) % 100000 == 0)
-      {
-        std::cout << "Pixel " << j << ", " << i << " complete!" << std::endl;
-      }
-    }
-  }
-
-  std::cout << "Pixel analysis complete" << std::endl;
-}
-
-
-int main(int argc, char **argv)
-{
-  // initialize dimensional variables
-  uint16_t width = 6000;
-  uint16_t height = 6000;
-  uint32_t size = width * height;
-
-  // if program is run without arguments, program will use every available thread
-  // otherwise, the first argument defines the number of threads
-  if (argc > 1)
-  {
-    thread_count = std::atoi(argv[1]);
-  }
-
-  // initialize memory variables
-  short *dataMem = (short *)malloc(size * sizeof(short));
-  uint32_t *outMem = (uint32_t *)malloc(size * sizeof(uint32_t));
-
-  // read in file
-  FILE *data = fopen("./data/srtm_14_04_6000x6000_short16.raw", "rb");
-
-  fread((char *)dataMem, sizeof(short), width * height, data);
-
-  fclose(data);
-
-  // compute visibility of each pixel of dataset
-  calcViewshed(dataMem, outMem, 100, width, height);
-
-  // write out file
-  FILE *outData = fopen("./data/out_awannacu.raw", "wb");
-
-  fwrite((char *)outMem, sizeof(uint32_t), width * height, data);
-
-  fclose(data);
-  
   return 0;
+}
+
+
+// Reads input file into a vector
+// Input: Name of the file
+// Output: A vector containing the entire file.
+std::vector<unsigned short int> readInFile(std::string fileName) {
+  // Open a binary file stream.
+  std::ifstream srtm(fileName, std::ios::in | std::ios::binary | std::ios::ate);
+  // Get the size of the file.
+  long size;
+  srtm.seekg(0, std::ios::end);
+  size = srtm.tellg();
+  srtm.seekg(0L, std::ios::beg);
+
+  if (size % sizeof(unsigned short int) == 0) {
+    std::vector<unsigned short int> file_data(size/sizeof(unsigned short int));
+
+    // Read the file into the vector.
+    srtm.read((char*) file_data.data(), size);
+    srtm.close();
+
+    return file_data;
+  } else {
+    // Exit the program if there is more than just unsigned ints.
+    printf("Error: Incompatible File Size");
+    exit(EXIT_FAILURE);
+  }
+}
+
+// Determines the number of visible pixels within a certain radius from a given center. 
+void visiblePoints(int numRows, int numColumns, uint8_t radius, unsigned short* data, uint32_t *out) {
+  FILE* outFile = fopen("srtm_14_04_6000x6000_int32_serial_10.raw", "wb");
+    #pragma omp parallel for num_threads(thread_count) collapse(2)
+  for (int y = 0; y < numRows; y++) {
+      for (int x = 0; x < numColumns; x++) {
+          uint32_t visiblePoints = getVisibilityInAreaOfInterest(x, y, radius, data, numColumns, numRows); // Calculate number of visible points.
+          out[y * numRows + x] = visiblePoints;
+      }
+  }
+
+  fclose(outFile);
+}
+
+void getNormalVisibility(
+    int8_t sign,
+    uint16_t x0,
+    uint16_t y0,
+    uint16_t x1,
+    uint16_t y1,
+    uint16_t *observationElevation,
+    unsigned short *data,
+    char *visiblePoints,
+    int16_t *leftX,
+    int16_t *topY,
+    uint16_t *visiblePointsWidth,
+    int width
+) {
+    char finished = 0;
+    int16_t deltaX = abs(x1 - x0);
+    int16_t deltaY = y1 - y0;
+    
+    double maxSlope = -45;
+    
+    char incrementY = 1;
+    
+    if (deltaY < 0) {
+        incrementY = -1;
+        deltaY = -deltaY;
+    }
+    
+    int error = 2 * deltaY - deltaX;
+    
+    uint16_t x = x0;
+    uint16_t y = y0;
+    
+    while(!finished) {
+        if (x == x1) {
+            finished = 1;
+        }
+        
+        double elevation = data[y * width + x] - *observationElevation;
+        double distance = sqrt((x - x0) * (x - x0) + (y - y0) * (y - y0));
+        double slope = elevation / distance;
+        
+        if (slope > maxSlope) {
+            visiblePoints[(y - *topY) * *visiblePointsWidth + (x - *leftX)] = 1;
+            maxSlope = slope;
+        }
+        
+        // printf("%f %f %f (%d, %d) %d %d\n", elevation, distance, slope, x, y, data[(y * width + x)], visiblePoints[(y - *topY) * *visiblePointsWidth + (x - *leftX)]);
+        
+        if (error > 0) {
+            y += incrementY;
+            error -= 2 * deltaX;
+        }
+        
+        error += 2 * deltaY;
+        
+        x += sign;
+    }
+}
+
+void getInverseVisibility(
+    int8_t sign,
+    uint16_t x0,
+    uint16_t y0,
+    uint16_t x1,
+    uint16_t y1,
+    uint16_t *observationElevation,
+    unsigned short *data,
+    char *visiblePoints,
+    int16_t *leftX,
+    int16_t *topY,
+    uint16_t *visiblePointsWidth,
+    int width
+) {
+    char finished = 0;
+    int16_t deltaX = x1 - x0;
+    int16_t deltaY = abs(y1 - y0);
+    
+    double maxSlope = -45;
+    
+    char incrementX = 1;
+    
+    if (deltaX < 0) {
+        incrementX = -1;
+        deltaX = -deltaX;
+    }
+    
+    int error = 2 * deltaX - deltaY;
+    
+    uint16_t x = x0;
+    uint16_t y = y0;
+    
+    while (!finished) {
+        if (y == y1) {
+            finished = 1;
+        }
+        
+        double elevation = data[y * width + x] - *observationElevation;
+        double distance = sqrt((x - x0) * (x - x0) + (y - y0) * (y - y0));
+        double slope = elevation / distance;
+        
+        if (slope > maxSlope) {
+            visiblePoints[(y - *topY) * *visiblePointsWidth + (x - *leftX)] = 1;
+            maxSlope = slope;
+        }
+        
+        // printf("%f %f %f (%d, %d) %d %d\n", elevation, distance, slope, x, y, data[(y * width + x)], visiblePoints[(y - *topY) * *visiblePointsWidth + (x - *leftX)]);
+        
+        if (error > 0) {
+            x += incrementX;
+            error -= 2 * deltaY;
+        }
+        
+        error += 2 * deltaX;
+        
+        y += sign;
+    }
+}
+
+void getVisibility(
+    uint16_t x0,
+    uint16_t y0,
+    uint16_t x1,
+    uint16_t y1,
+    unsigned short *data,
+    char *visiblePoints,
+    int16_t *leftX,
+    int16_t *topY,
+    uint16_t *visiblePointsWidth,
+    int width
+) {
+    uint16_t observationElevation = data[y0 * width + x0];
+    
+    if (abs(y1 - y0) < abs(x1 - x0)) {
+        if (x0 > x1) {
+            getNormalVisibility(-1, x0, y0, x1, y1, &observationElevation, data, visiblePoints, leftX, topY, visiblePointsWidth, width);
+        }
+        else {
+            getNormalVisibility(1, x0, y0, x1, y1, &observationElevation, data, visiblePoints, leftX, topY, visiblePointsWidth, width);
+        }
+    }
+    else {
+        if (y0 > y1) {
+            getInverseVisibility(-1, x0, y0, x1, y1, &observationElevation, data, visiblePoints, leftX, topY, visiblePointsWidth, width);
+        }
+        else {
+            getInverseVisibility(1, x0, y0, x1, y1, &observationElevation, data, visiblePoints, leftX, topY, visiblePointsWidth, width);
+        }
+    }
+}
+
+uint32_t getVisibilityInAreaOfInterest(
+    uint16_t x0,
+    uint16_t y0,
+    uint8_t radius,
+    unsigned short *data,
+    int width,
+    int height
+) {
+    char *visiblePoints;
+    uint32_t totalVisiblePoints = 0;
+    uint16_t visiblePointsWidth = radius * 2 + 1;
+    
+    int16_t leftX   = (x0 - radius) < 0 ? 0 : (x0 - radius) ;
+    int16_t topY    = (y0 - radius) < 0 ? 0 : (y0 - radius) ;
+    int16_t rightX  = (x0 + radius) >= width  ? width - 1  : (x0 + radius) ;
+    int16_t bottomY = (y0 + radius) >= height ? height - 1 : (y0 + radius) ;
+    
+    uint16_t x = leftX;
+    uint16_t y = topY;
+    
+    // printf("%d %d %d %d\n", leftX, topY, rightX, bottomY);
+    
+    visiblePoints = (char*) calloc(visiblePointsWidth * visiblePointsWidth, sizeof(char));
+    
+    for (; x < rightX; x++) {
+        getVisibility(x0, y0, x, y, data, visiblePoints, &leftX, &topY, &visiblePointsWidth, width);
+    }
+    getVisibility(x0, y0, x, y, data, visiblePoints, &leftX, &topY, &visiblePointsWidth, width);
+    
+    for (y += 1; y < bottomY; y++) {
+        getVisibility(x0, y0, x, y, data, visiblePoints, &leftX, &topY, &visiblePointsWidth, width);
+    }
+    getVisibility(x0, y0, x, y, data, visiblePoints, &leftX, &topY, &visiblePointsWidth, width);
+    
+    for (x -= 1; x > leftX; x--) {
+        getVisibility(x0, y0, x, y, data, visiblePoints, &leftX, &topY, &visiblePointsWidth, width);
+    }
+    getVisibility(x0, y0, x, y, data, visiblePoints, &leftX, &topY, &visiblePointsWidth, width);
+    
+    for (y -= 1; y > topY; y--) {
+        getVisibility(x0, y0, x, y, data, visiblePoints, &leftX, &topY, &visiblePointsWidth, width);
+    }
+    
+    for (int i = 0; i < (visiblePointsWidth * visiblePointsWidth); i++) {
+        totalVisiblePoints += visiblePoints[i];
+    }
+    
+    free(visiblePoints);
+    
+    return totalVisiblePoints;
 }
