@@ -36,7 +36,7 @@ int main(int argc, char *argv[])
       for (int x=0; x<width; x++)
         {
           int index = y * height + x;
-          rank = index % num_proc;
+          int rank = index % num_proc;
 
           /* root process generates buffer to send to computing process */
           if (proc_rank == 0)
@@ -57,12 +57,12 @@ int main(int argc, char *argv[])
                   }
               }
 
-            MPI_Isend(buffer, radius*2 +1, MPI_SHORT, rank, 0, MPI_COMM_WORLD);
+            MPI_Isend(&buffer, radius*2 +1, MPI_SHORT, rank, 0, MPI_COMM_WORLD);
           }
 
           short shared_buffer[radius*2+1];
 
-          MPI_Irecv(shared_buffer, radius*2+1, MPI_SHORT, 0, 0, MPI_COMM_WORLD);
+          MPI_Irecv(&shared_buffer, radius*2+1, MPI_SHORT, 0, 0, MPI_COMM_WORLD);
 
           if (proc_rank == rank)
           {

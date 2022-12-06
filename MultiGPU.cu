@@ -218,6 +218,27 @@ void calcViewshed(short *data, uint32_t *viewshed, uint8_t radius, uint16_t widt
     }
 }
 
+/* This function is utilized by the distributed GPU implementation */
+extern "C" void startKernel(short *data, uint32_t *viewshed, uint8_t radius, uint16_t width, uint16_t height)
+{
+  short *data_d;
+  uint32_t *viewshed_d;
+
+  cudaMalloc((void**) &data_d, width * height * sizeof(short));
+  cudaMalloc((void**) &viewshed_d, width * height * sizeof(uint32_t));
+
+  cudaMemcpy(data_d, data, width * height * sizeof(short), cudaMemcpyHostToDevice);
+
+  /* dimensions used to calculate a 1000 x 1000 space */
+  dim3 DimGrid(100, 100, 1); 
+  dim3 DimBlock(10, 10, 1);
+
+  calcViewshed<<<DimGrid, DimBlock>>>(data_d, viewshed_d, radius, width, height);
+
+  cudaMemcpy(viewshed, viewshed_d, width * height * sizeof(uint32_t), cudaMemcpyDeviceToHost);
+}
+
+
 int main() {
     short *data_h;
     uint32_t *viewshed_h;
