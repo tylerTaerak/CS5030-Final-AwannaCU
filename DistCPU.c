@@ -3,7 +3,7 @@
 int main(int argc, char *argv[])
 {
   /* parameters for calculation */
-  int radius = 100; /* max distance of point for visibility */
+  int radius = 10; /* max distance of point for visibility */
   int width = 6000; /* width of file */
   int height = 6000; /* height of file */
 
@@ -41,7 +41,7 @@ int main(int argc, char *argv[])
           /* root process generates buffer to send to computing process */
           if (proc_rank == 0)
           {
-            short buffer[radius*2 + 1];
+            short buffer[(radius*2 + 1)*(radius*2 + 1)];
             int buffer_index = 0;
             
             uint16_t leftX   = (x - radius) < 0 ? 0 : (x0 - radius) ;
@@ -57,12 +57,12 @@ int main(int argc, char *argv[])
                   }
               }
 
-            MPI_Isend(&buffer, radius*2 +1, MPI_SHORT, rank, 0, MPI_COMM_WORLD);
+            MPI_Isend(&buffer, (radius*2 + 1)*(radius*2 + 1), MPI_SHORT, rank, 0, MPI_COMM_WORLD);
           }
 
-          short shared_buffer[radius*2+1];
+          short shared_buffer[(radius*2 + 1)*(radius*2 + 1)];
 
-          MPI_Irecv(&shared_buffer, radius*2+1, MPI_SHORT, 0, 0, MPI_COMM_WORLD);
+          MPI_Irecv(&shared_buffer, (radius*2 + 1)*(radius*2 + 1), MPI_SHORT, 0, 0, MPI_COMM_WORLD);
 
           if (proc_rank == rank)
           {

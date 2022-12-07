@@ -6,6 +6,10 @@
 #define MASK_SIZE 441
 #define SUB_WIDTH 21
 
+/**
+ * Pseudocode for the Bresenham's line algorithm used in this project was taken and modified from:
+ *     https://en.wikipedia.org/wiki/Bresenham%27s_line_algorithm
+ */
 __device__
 void getNormalVisibility(
     int8_t sign,
@@ -245,11 +249,11 @@ int main() {
     short *data_d;
     uint32_t *viewshed_d;
     
-    // cudaEvent_t startEvent, stopEvent;    // CUDA events used to compute the elapsed time of the kernal functions.
-    // cudaEventCreate(&startEvent);
-    // cudaEventCreate(&stopEvent);
+    cudaEvent_t startEvent, stopEvent;    x-- CUDA events used to compute the elapsed time of the kernal functions.
+    cudaEventCreate(&startEvent);
+    cudaEventCreate(&stopEvent);
     
-    // float elapsedTime = 0;                // Actual elapsed time of the kernal functions.
+    float elapsedTime = 0;                // Actual elapsed time of the kernal functions.
     
     uint8_t radius = 10;
     
@@ -258,7 +262,6 @@ int main() {
     uint16_t width = 6000;
     uint16_t height = 6000;
     
-    // FILE* f = fopen("test.raw", "rb");
     FILE* f = fopen("srtm_14_04_6000x6000_short16.raw", "rb");
     
     if (f == NULL) {
@@ -284,13 +287,23 @@ int main() {
     dim3 DimGrid(375,375,1);
     dim3 DimBlock(16,16,1);
     
+    cudaEventRecord(startEvent, 0);
+    
     calcViewshed<<<DimGrid, DimBlock>>>(data_d, viewshed_d, radius, width, height);
+    
+    cudaEventRecord(stopEvent, 0);
+    cudaEventSynchronize(stopEvent);
+    
+    cudaEventElapsedTime(&elapsedTime, startEvent, stopEvent);
+    
+    printf("Elapsed time using radius of 10: %f ms\n", elapsedTime);
+    printf("Bandwidth performance using radius of 10: %f KB/s\n", ((size * sizeof(short) + size * sizeof(uint32_t)) / (elapsedTime * 1024000))); // Effective bandwidth was calculated
     
     viewshed_h = (uint32_t*) malloc(sizeof(uint32_t) * size);
     
     cudaMemcpy(viewshed_h, viewshed_d, size * sizeof(uint32_t), cudaMemcpyDeviceToHost);
     
-    f = fopen("srtm_14_04_6000x6000_int32_gpu_100.raw", "wb");
+    f = fopen("srtm_14_04_6000x6000_int32_gpu_10.raw", "wb");
     
     fwrite(viewshed_h, sizeof(uint32_t), size, f);
     

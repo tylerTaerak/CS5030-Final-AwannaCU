@@ -1,17 +1,18 @@
 # compile all required files
 g++ Serial.cpp -o serial
 g++ -fopenmp MultiCPU.cpp -o multicpu
-nvcc MultiGPU -o multigpu
+nvcc MultiGPU -o multigpu.o
+nvcc multigpu.o -o multigpu -lcudart
 mpicc DistCPU.c -o distcpu
-mpicc DistGPU -o distgpu
-mpicc distgpu multigpu -lcudart
+mpicc DistGPU -o distgpu.o
+mpicc distgpu.o multigpu.o -o distgpu -lcudart
 
 # run all binaries
-./serial
-./multicpu
-./multigpu
-./distcpu
-./distgpu
+./serial srtm_14_04_6000x6000_short16.raw
+./multicpu srtm_14_04_6000x6000_short16.raw 16
+srun ./multigpu
+mpiexec -n 6 ./distcpu
+mpiexec -n 6 ./distgpu
 
 # output file names
 serial = "srtm_14_04_6000x6000_int32_serial_10.raw"

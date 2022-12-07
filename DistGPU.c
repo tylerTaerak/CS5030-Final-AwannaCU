@@ -11,7 +11,7 @@ void startKernel(short *data, uint32_t *viewshed, uint8_t radius, uint16_t width
 int main(int argc, char *argv[])
 {
   /* parameters for calculation */
-  int radius = 100; /* max distance of point for visibility */
+  int radius = 10; /* max distance of point for visibility */
   int width = 6000; /* width of file */
   int height = 6000; /* height of file */
 
