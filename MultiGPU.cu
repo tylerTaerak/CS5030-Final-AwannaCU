@@ -249,7 +249,7 @@ int main() {
     short *data_d;
     uint32_t *viewshed_d;
     
-    cudaEvent_t startEvent, stopEvent;    x-- CUDA events used to compute the elapsed time of the kernal functions.
+    cudaEvent_t startEvent, stopEvent;
     cudaEventCreate(&startEvent);
     cudaEventCreate(&stopEvent);
     
@@ -297,7 +297,7 @@ int main() {
     cudaEventElapsedTime(&elapsedTime, startEvent, stopEvent);
     
     printf("Elapsed time using radius of 10: %f ms\n", elapsedTime);
-    printf("Bandwidth performance using radius of 10: %f KB/s\n", ((size * sizeof(short) + size * sizeof(uint32_t)) / (elapsedTime * 1024000))); // Effective bandwidth was calculated
+    printf("Bandwidth performance using radius of 10: %f KB/s\n", ((size * sizeof(short) + size * sizeof(uint32_t)) / ((elapsedTime / 1000) * 1024))); // Effective bandwidth was calculated
     
     viewshed_h = (uint32_t*) malloc(sizeof(uint32_t) * size);
     

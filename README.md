@@ -109,8 +109,8 @@ against one another:
 
 || Serial | Parallel CPU | Parallel GPU |
 |:-| :----: | :----------: | :----------: |
-| Compute Time (s)| 680 | 313 | 258 |
-| Bandwidth Performance (KB/s) | 310 | 674 | 818 |
+| Compute Time (s)| 641 | 391 | 2.247 |
+| Bandwidth Performance (KB/s) | 329 | 539 | 93867 |
 
 We were unable to test the scaling of the distributed implementations due to the CHPC being offline on Tuesday Decemebr 6th.
 
